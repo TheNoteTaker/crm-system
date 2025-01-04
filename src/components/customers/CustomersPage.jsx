@@ -1,51 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { CustomerFilters } from './CustomerFilters';
 import { CustomerTable } from './CustomerTable';
 import { AddCustomerModal } from './AddCustomerModal';
-
-const initialCustomers = [
-  {
-    id: 1,
-    name: 'Alice Freeman',
-    email: 'alice@example.com',
-    status: 'active',
-    spent: 1200,
-    lastOrder: '2023-12-20',
-    avatar: 'https://cdn.usegalileo.ai/stability/117a7a12-7704-4917-9139-4a3f76c42e78.png'
-  },
-  {
-    id: 2,
-    name: 'Bob Smith',
-    email: 'bob@example.com',
-    status: 'inactive',
-    spent: 800,
-    lastOrder: '2023-12-15',
-    avatar: 'https://cdn.usegalileo.ai/stability/d4e7d763-28f3-4af2-bc57-a26db12c522b.png'
-  },
-  {
-    id: 3,
-    name: 'Charlie Brown',
-    email: 'charlie@example.com',
-    status: 'active',
-    spent: 2500,
-    lastOrder: '2023-12-18',
-    avatar: 'https://cdn.usegalileo.ai/stability/e9fdb59b-64bb-4239-8e52-f71e0cfb538e.png'
-  },
-  {
-    id: 4,
-    name: 'David Jones',
-    email: 'david@example.com',
-    status: 'active',
-    spent: 3200,
-    lastOrder: '2023-12-19',
-    avatar: 'https://cdn.usegalileo.ai/stability/1af7ccee-eb75-4af5-b80e-ee2ec64a79ef.png'
-  }
-];
+import { useAuth } from '../../context/AuthContext';
+import { listCustomers } from '../../lib/queries';
+import { Pagination } from '../ui/Pagination';
+import toast from 'react-hot-toast';
 
 export function CustomersPage() {
-  const [customers, setCustomers] = useState(initialCustomers);
+  const { profile } = useAuth();
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     search: '',
@@ -53,32 +27,64 @@ export function CustomersPage() {
     sortBy: 'name'
   });
 
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+    
+    let timer = setTimeout(() => {
+      fetchCustomers();
+    }, filters.search ? 300 : 0);
+    
+    return () => clearTimeout(timer);
+  }, [profile?.tenant_id, pagination.page, filters.status, filters.sortBy, filters.search]);
+
+  const fetchCustomers = async () => {
+    if (!profile?.tenant_id) {
+      setLoading(false);
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const result = await listCustomers(
+        profile.tenant_id,
+        {
+          page: pagination.page,
+          limit: pagination.limit,
+          orderBy: filters.sortBy,
+          orderDirection: 'asc'
+        },
+        {
+          name: filters.search?.trim() || undefined,
+          status: filters.status === 'all' ? undefined : filters.status
+        }
+      );
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      setCustomers(result.data || []);
+      setPagination(prev => ({
+        ...prev,
+        total: result.pagination?.total || 0,
+        totalPages: Math.max(1, result.pagination?.totalPages || 0)
+      }));
+    } catch (error) {
+      console.error('Error in fetchCustomers:', error);
+      toast.error('Failed to load customers');
+      setCustomers([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddCustomer = (newCustomer) => {
     setCustomers([...customers, newCustomer]);
   };
 
-  const filteredCustomers = customers.filter(customer => {
-    if (filters.status !== 'all' && customer.status !== filters.status) {
-      return false;
-    }
-    if (filters.search) {
-      const search = filters.search.toLowerCase();
-      return (
-        customer.name.toLowerCase().includes(search) ||
-        customer.email.toLowerCase().includes(search)
-      );
-    }
-    return true;
-  }).sort((a, b) => {
-    switch (filters.sortBy) {
-      case 'spent':
-        return b.spent - a.spent;
-      case 'lastOrder':
-        return new Date(b.lastOrder) - new Date(a.lastOrder);
-      default:
-        return a.name.localeCompare(b.name);
-    }
-  });
+  const handlePageChange = (newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
 
   return (
     <main className="flex-1 min-w-0 overflow-auto">
@@ -95,8 +101,28 @@ export function CustomersPage() {
             <CardHeader>
               <CustomerFilters filters={filters} onChange={setFilters} />
             </CardHeader>
-            <CardContent>
-              <CustomerTable customers={filteredCustomers} />
+            <CardContent className="space-y-4">
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-gray-500">Loading customers...</p>
+                </div>
+              ) : customers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {filters.search 
+                    ? `No customers found matching "${filters.search}"`
+                    : 'No customers found'}
+                </div>
+              ) : (
+                <>
+                  <CustomerTable customers={customers} />
+                  <Pagination
+                    currentPage={pagination.page}
+                    totalPages={pagination.totalPages}
+                    onPageChange={handlePageChange}
+                  />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -1,33 +1,51 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Dialog } from '@headlessui/react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { customerSchema } from '../../lib/validations';
 import { Card } from '../ui/Card';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+import { createCustomer } from '../../lib/queries';
 
 export function AddCustomerModal({ isOpen, onClose, onAdd }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    status: 'active',
-    avatar: 'https://cdn.usegalileo.ai/stability/117a7a12-7704-4917-9139-4a3f76c42e78.png'
+  const { profile } = useAuth();
+  const { register, handleSubmit, formState: { errors }, setError } = useForm({
+    resolver: zodResolver(customerSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      status: 'active',
+      avatar_url: 'https://cdn.usegalileo.ai/stability/117a7a12-7704-4917-9139-4a3f76c42e78.png'
+    }
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (!formData.name || !formData.email) {
-      toast.error('Please fill in all required fields');
+  const onSubmit = async (data) => {
+    if (!profile?.tenant_id) return;
+
+    const result = await createCustomer({
+      ...data,
+      tenant_id: profile.tenant_id,
+      spent: 0
+    });
+
+    if (result.error) {
+      if (result.error.type === 'constraint' && result.error.field === 'email') {
+        setError('email', {
+          type: 'manual',
+          message: 'This email is already registered'
+        });
+      } else {
+        toast.error(result.error.message);
+      }
       return;
     }
 
-    onAdd({
-      ...formData,
-      id: Date.now(),
-      spent: 0,
-      lastOrder: new Date().toISOString().split('T')[0]
-    });
-    
-    toast.success('Customer added successfully');
-    onClose();
+    if (result.data) {
+      onAdd(result.data);
+      toast.success('Customer added successfully');
+      onClose();
+    }
   };
 
   return (
@@ -55,7 +73,7 @@ export function AddCustomerModal({ isOpen, onClose, onAdd }) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit(onSubmit)}>
               <div className="p-6 space-y-4">
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -64,11 +82,12 @@ export function AddCustomerModal({ isOpen, onClose, onAdd }) {
                   <input
                     type="text"
                     id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    {...register('name')}
                     className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-hover text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    required
                   />
+                  {errors.name && (
+                    <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
+                  )}
                 </div>
 
                 <div>
@@ -78,26 +97,29 @@ export function AddCustomerModal({ isOpen, onClose, onAdd }) {
                   <input
                     type="email"
                     id="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    {...register('email')}
                     className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-hover text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    required
                   />
+                  {errors.email && (
+                    <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                  )}
                 </div>
 
                 <div>
                   <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Status
                   </label>
-                  <select
+                  <select 
                     id="status"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    {...register('status')}
                     className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-hover text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                  {errors.status && (
+                    <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>
+                  )}
                 </div>
               </div>
 

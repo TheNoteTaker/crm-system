@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Menu } from '@headlessui/react';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const userNavigation = [
@@ -9,13 +10,26 @@ const userNavigation = [
 ];
 
 export function UserMenu({ onNavigate }) {
+  const { signOut } = useAuth();
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOut();
+      toast.success('Signed out successfully');
+      // Force reload to clear any cached state
+      window.location.href = '/';
+    } catch (error) {
+      toast.error('Failed to sign out');
+    }
+  }, [signOut]);
+
   const handleAction = (action) => {
     if (action === 'profile') {
       onNavigate('profile');
     } else if (action === 'settings') {
       onNavigate('settings');
     } else if (action === 'logout') {
-      toast.success('Signed out successfully');
+      handleLogout();
     }
   };
 
