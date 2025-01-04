@@ -37,16 +37,41 @@ export async function createUserProfile(authUser: AuthUser, name: string = 'New 
 
 export async function getUserProfile(userId: string) {
   try {
-    const { data: profile, error } = await supabase
-      .rpc('get_user_profile', { user_id: userId });
+    // First try to get from users table directly
+    const { data: profile, error: userError } = await supabase
+      .from('users')
+      .select(`
+        *,
+        tenants (
+          id,
+          name,
+          domain
+        )
+      `)
+      .eq('id', userId)
+      .single();
 
-    if (error) throw error;
-    return { data: profile, error: null };
+    if (userError) {
+      console.error('Error fetching user:', userError);
+      return { data: null, error: handleDatabaseError(userError) };
+    }
+
+    // Transform the response to match expected profile structure
+    const transformedProfile = profile ? {
+      ...profile,
+      tenant_name: profile.tenants?.name,
+      tenant_domain: profile.tenants?.domain
+    } : null;
+
+    delete transformedProfile?.tenants;
+
+    return { data: transformedProfile, error: null };
   } catch (error) {
-    console.error('Error fetching user profile:', error);
+    console.error('Error in getUserProfile:', error);
     return { data: null, error: handleDatabaseError(error) };
   }
 }
+
 interface PaginationParams {
   page?: number;
   limit?: number;
